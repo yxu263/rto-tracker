@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance & Leave Planner</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="icon" href="./icon-192.png">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="RTO">
+    <style>
+        /* Restored classic version color palette with relaxed holiday green */
+        :root {
+            --color-swiped: #3b82f6;
+            --color-vacation: #10b981; /* Mint / Seafoam Green */
+            --color-floating: #06b6d4;
+            --color-family: #8b5cf6;
+            --color-holiday: #047857;  /* Relaxed Emerald Green for Paid Holidays */
+            --color-none: #ffffff;
+            --color-weekend: #f1f5f9; /* Muted background for distinct weekend styling */
+        }
+
+        body {
+            font-family: sans-serif;
+            background-color: #f8fafc;
+            margin: 20px;
+            color: #334155;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 800px) {
+            .container { grid-template-columns: 1fr; }
+        }
+
+        .header-strip {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+        }
+
+        .header-strip h2 {
+            margin: 0;
+            font-size: 1.3rem;
+            color: #1e293b;
+        }
+
+        .controls-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Calendar Layout */
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .calendar-header h3 { margin: 0; font-size: 1.15rem; }
+        .btn-group { display: flex; gap: 5px; }
+
+        .nav-btn {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #64748b;
+            transition: all 0.15s ease;
+        }
+        .nav-btn:hover { background: #e2e8f0; color: #334155; }
+        .today-btn { background: #cbd5e1; color: #334155; }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+            text-align: center;
+            position: relative;
+        }
+
+        .weekday-label {
+            font-weight: bold;
+            font-size: 0.85rem;
+            color: #64748b;
+            padding-bottom: 5px;
+        }
+
+        .day-cell {
+            aspect-ratio: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+            user-select: none;
+            background-color: var(--color-none);
+            border: 1px solid #e2e8f0;
+            color: #334155;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .day-cell:hover { filter: brightness(0.95); transform: scale(1.04); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        
+        /* Weekend contrast */
+        .day-cell.weekend-cell { background-color: var(--color-weekend); color: #94a3b8; border-color: #e2e8f0; }
+        .day-cell.other-month { opacity: 0.2; pointer-events: none; }
+        .day-cell.today { border: 2px solid #334155 !important; }
+
+        /* Color States */
+        .day-cell.state-swiped { background-color: var(--color-swiped) !important; color: white; border-color: var(--color-swiped); }
+        .day-cell.state-vacation { background-color: var(--color-vacation) !important; color: white; border-color: var(--color-vacation); }
+        .day-cell.state-floating { background-color: var(--color-floating) !important; color: white; border-color: var(--color-floating); }
+        .day-cell.state-family { background-color: var(--color-family) !important; color: white; border-color: var(--color-family); }
+        .day-cell.state-holiday { background-color: var(--color-holiday) !important; color: white; border-color: var(--color-holiday); }
+
+        /* Half-day split cells: top half = leave category, bottom half = work half */
+        .day-cell.state-half { color: #1e293b; border-color: #94a3b8; position: relative; text-shadow: 0 0 3px rgba(255,255,255,0.85); }
+        .day-cell.state-half.work-swiped { color: #0f172a; }
+        .day-cell.state-half::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 8%;
+            right: 8%;
+            height: 1px;
+            background: rgba(255,255,255,0.75);
+        }
+
+        /* Intelligent Right-Click Custom Context Menu UI */
+        .custom-context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+            padding: 4px 0;
+            min-width: 170px;
+            z-index: 1000;
+            display: none;
+            font-size: 0.85rem;
+        }
+        .context-menu-item {
+            padding: 8px 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: #334155;
+            transition: background 0.1s;
+        }
+        .context-menu-item:hover {
+            background: #f1f5f9;
+        }
+        .context-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 0.8rem;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 15px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .color-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+        /* Metrics Display */
+        .metric-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .metric-box {
+            text-align: center;
+            padding: 12px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+        }
+        .metric-title { font-size: 0.75rem; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+        .metric-value { font-size: 1.8rem; font-weight: bold; color: #334155; transition: all 0.3s; }
+        
+        .status-green { background-color: #d1fae5; color: #065f46; }
+        .status-yellow { background-color: #fef3c7; color: #92400e; }
+        .status-red { background-color: #fee2e2; color: #991b1b; }
+
+        /* Forms Layout */
+        .section-title { margin: 0; font-size: 0.9rem; color: #475569; font-weight: bold; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; text-transform: uppercase; }
+        
+        .form-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        .form-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .form-inputs > div.full-span { grid-column: 1 / -1; }
+
+        label { font-size: 0.75rem; font-weight: bold; color: #475569; margin-bottom: 3px; display: block; }
+        input[type="date"], select, button.action-btn {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+            background: white;
+            outline: none;
+        }
+        
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #475569;
+            user-select: none;
+            cursor: pointer;
+            margin-top: 2px;
+        }
+        .checkbox-row input { width: 14px; height: 14px; cursor: pointer; }
+
+        button.action-btn {
+            background: #475569;
+            color: white;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.05s;
+        }
+        button.action-btn:hover { background: #334155; }
+        button.action-btn:active { transform: scale(0.99); }
+
+        /* Cell Bars Elements */
+        .balance-container { display: flex; flex-direction: column; gap: 12px; }
+        .balance-row { display: flex; flex-direction: column; gap: 4px; }
+        .balance-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+            user-select: none;
+        }
+        .balance-info:hover { background-color: #e2e8f0; }
+        .balance-info.active-filter { background-color: #cbd5e1; }
+        .balance-info .type-name { color: #334155; text-decoration: underline; text-underline-offset: 3px; }
+        .balance-info .count-details { color: #64748b; font-size: 0.8rem; }
+        
+        .cell-bar {
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            background: #f8fafc;
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px dashed #cbd5e1;
+            min-height: 14px;
+        }
+        .bar-cell { width: 14px; height: 14px; border-radius: 2px; }
+        .bar-cell.filled-vacation { background-color: var(--color-vacation); }
+        .bar-cell.filled-floating { background-color: var(--color-floating); }
+        .bar-cell.filled-family { background-color: var(--color-family); }
+        .bar-cell.empty { background-color: #e2e8f0; opacity: 0.6; }
+        .bar-cell.half-vacation { background: linear-gradient(to bottom, var(--color-vacation) 50%, #e2e8f0 50%); }
+        .bar-cell.half-family { background: linear-gradient(to bottom, var(--color-family) 50%, #e2e8f0 50%); }
+
+        /* Yearly swipe summary strip */
+        .year-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.72rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .year-summary-item { display: flex; flex-direction: column; gap: 2px; text-align: center; }
+        .year-summary-label { font-size: 0.65rem; font-weight: bold; color: #64748b; text-transform: uppercase; }
+        .year-summary-value { font-size: 1rem; font-weight: bold; color: #334155; }
+        .year-summary-note { font-size: 0.62rem; color: #94a3b8; }
+
+        /* History Popdowns */
+        .history-wrapper {
+            display: none;
+            flex-direction: column;
+            gap: 5px;
+            animation: slideDown 0.2s ease-out;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .history-list {
+            max-height: 110px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 0;
+            margin: 0;
+            list-style: none;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-item:hover { background: #f8fafc; color: #3b82f6; }
+        .history-item .hist-date { font-weight: bold; text-decoration: underline; }
+        
+        .badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: white;
+        }
+        .bg-vacation { background-color: var(--color-vacation); }
+        .bg-floating { background-color: var(--color-floating); }
+        .bg-family { background-color: var(--color-family); }
+
+        /* Toolbar Components */
+        .sync-btn {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .sync-btn:hover { background: #e2e8f0; color: #1e293b; }
+        .sync-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        #file-input { display: none; }
+        .divider { width: 1px; height: 20px; background-color: #cbd5e1; margin: 0 4px; }
+
+        /* Sync status + settings modal */
+        .sync-status {
+            font-size: 0.72rem;
+            font-weight: bold;
+            color: #64748b;
+            white-space: nowrap;
+        }
+        .sync-status.state-ok { color: #047857; }
+        .sync-status.state-busy { color: #2563eb; }
+        .sync-status.state-warn { color: #b45309; }
+        .sync-status.state-err { color: #b91c1c; }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+        .modal-backdrop.open { display: flex; }
+        .modal-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            width: 100%;
+            max-width: 430px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.3);
+        }
+        .modal-card h3 { margin: 0 0 6px; font-size: 1.05rem; color: #1e293b; }
+        .modal-help { font-size: 0.75rem; color: #64748b; margin: 0 0 14px; line-height: 1.5; }
+        .modal-help a { color: #2563eb; }
+        .modal-card input[type="text"], .modal-card input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+            background: white;
+            outline: none;
+        }
+        .modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+        .modal-status { font-size: 0.75rem; margin-top: 12px; color: #475569; min-height: 16px; line-height: 1.5; }
+        .modal-status.err { color: #b91c1c; }
+        .modal-status.ok { color: #047857; }
+    </style>
+</head>
+<body>
+
+<div id="context-menu" class="custom-context-menu">
+    <div class="context-menu-item" data-action="swiped"><span class="context-dot" style="background: var(--color-swiped);"></span>Office Swipe</div>
+    <div class="context-menu-item" data-action="vacation"><span class="context-dot" style="background: var(--color-vacation);"></span>Vacation Day</div>
+    <div class="context-menu-item" data-action="floating"><span class="context-dot" style="background: var(--color-floating);"></span>Floating Holiday</div>
+    <div class="context-menu-item" data-action="family"><span class="context-dot" style="background: var(--color-family);"></span>Family Care</div>
+    <div class="context-menu-item" data-action="holiday"><span class="context-dot" style="background: var(--color-holiday);"></span>Paid Holiday</div>
+    <div class="context-menu-item" data-action="half-vacation-swiped" style="border-top: 1px solid #e2e8f0;"><span class="context-dot" style="background: linear-gradient(to bottom, var(--color-vacation) 50%, var(--color-swiped) 50%);"></span>½ Vacation + ½ Swiped</div>
+    <div class="context-menu-item" data-action="half-vacation-none"><span class="context-dot" style="background: linear-gradient(to bottom, var(--color-vacation) 50%, #ffffff 50%); border:1px solid #cbd5e1;"></span>½ Vacation + ½ No Swipe</div>
+    <div class="context-menu-item" data-action="half-family-swiped"><span class="context-dot" style="background: linear-gradient(to bottom, var(--color-family) 50%, var(--color-swiped) 50%);"></span>½ Family + ½ Swiped</div>
+    <div class="context-menu-item" data-action="half-family-none"><span class="context-dot" style="background: linear-gradient(to bottom, var(--color-family) 50%, #ffffff 50%); border:1px solid #cbd5e1;"></span>½ Family + ½ No Swipe</div>
+    <div class="context-menu-item" data-action="flip-half" style="border-top: 1px solid #e2e8f0;"><span class="context-dot" style="background: linear-gradient(to bottom, #94a3b8 50%, #e2e8f0 50%);"></span>Flip AM / PM Halves</div>
+    <div class="context-menu-item" data-action="toggle-half-work"><span class="context-dot" style="background: var(--color-swiped);"></span>Toggle Half-Day Swipe</div>
+    <div class="context-menu-item" data-action="clear" style="border-top: 1px solid #e2e8f0; color: #64748b;">Clear Selection</div>
+</div>
+
+<div class="container">
+    <div class="header-strip">
+        <h2>Attendance & Leave Planner</h2>
+        <div class="controls-wrapper">
+            <button class="sync-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
+            <button class="sync-btn" id="redo-btn" title="Redo (Ctrl+Y)" disabled>Redo</button>
+            <div class="divider"></div>
+            <button class="sync-btn" id="export-btn">Export JSON</button>
+            <button class="sync-btn" onclick="document.getElementById('file-input').click()">Import JSON</button>
+            <input type="file" id="file-input" accept=".json">
+            <div class="divider"></div>
+            <button class="sync-btn" id="sync-settings-btn" title="Cloud sync settings">&#9729; Sync</button>
+            <span class="sync-status" id="sync-status">Local only</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="calendar-header">
+            <div class="btn-group">
+                <button class="nav-btn" id="prev-month">&larr;</button>
+                <button class="nav-btn today-btn" id="today-btn">Today</button>
+            </div>
+            <h3 id="calendar-title">Month Year</h3>
+            <button class="nav-btn" id="next-month">&rarr;</button>
+        </div>
+        
+        <div class="calendar-grid" id="calendar-grid">
+            </div>
+
+        <div class="legend">
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-none); border:1px solid #cbd5e1;"></div>Workday (No Swipe)</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-weekend); border:1px solid #e2e8f0;"></div>Weekend</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-swiped)"></div>Office Swipe</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-vacation)"></div>Vacation</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-floating)"></div>Floating Holiday</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-family)"></div>Family Care</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--color-holiday)"></div>Company Paid Holiday</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="metric-row">
+            <div class="metric-box">
+                <div class="metric-title">4-Wk Rolling Avg</div>
+                <div id="avg-4wk" class="metric-value">0.00</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-title">12-Wk Rolling Avg</div>
+                <div id="avg-12wk" class="metric-value">0.00</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-title">YTD Avg</div>
+                <div id="avg-ytd" class="metric-value">0.00</div>
+            </div>
+        </div>
+
+        <div class="year-summary">
+            <div class="year-summary-item">
+                <span class="year-summary-label">Swiped This Year</span>
+                <span class="year-summary-value" id="ytd-swiped-total">0</span>
+                <span class="year-summary-note" id="ytd-swiped-note">days badged in <span id="ytd-year-label"></span></span>
+            </div>
+            <div class="year-summary-item">
+                <span class="year-summary-label">Still Needed @ 2.89/wk</span>
+                <span class="year-summary-value" id="ytd-needed-total">0</span>
+                <span class="year-summary-note" id="ytd-needed-note">to hit the full-year target</span>
+            </div>
+        </div>
+
+        <div class="form-container">
+            <div class="section-title" style="border:none; padding:0;">Log Attendance / Time-Off</div>
+            <div class="form-inputs">
+                <div>
+                    <label>Start Date</label>
+                    <input type="date" id="start-date">
+                </div>
+                <div>
+                    <label>End Date (Inclusive)</label>
+                    <input type="date" id="end-date">
+                </div>
+                <div class="full-span">
+                    <label>Log Type Category</label>
+                    <select id="vacation-type">
+                        <option value="vacation">Vacation Day</option>
+                        <option value="floating">Floating Holiday</option>
+                        <option value="family">Flexible Family Care</option>
+                        <option value="holiday">Corporate Paid Holiday</option>
+                    </select>
+                </div>
+            </div>
+            <label class="checkbox-row" id="skip-weekends-wrapper">
+                <input type="checkbox" id="chk-skip-weekends" checked>
+                Skip weekends & paid corporate holidays across range
+            </label>
+            <label class="checkbox-row" id="half-day-wrapper">
+                <input type="checkbox" id="chk-half-day">
+                Log as half day (vacation / family care only)
+            </label>
+            <div id="half-work-wrapper" style="display:none;">
+                <label>Which Half Is Time Off</label>
+                <select id="half-slot">
+                    <option value="am">Morning Off (leave on top)</option>
+                    <option value="pm">Afternoon Off (leave on bottom)</option>
+                </select>
+                <label style="margin-top:8px;">Other Half Of The Day</label>
+                <select id="half-work-mode">
+                    <option value="swiped">Office - Badge Swiped (blue)</option>
+                    <option value="none">Not Swiped (white)</option>
+                </select>
+            </div>
+            <button class="action-btn" id="add-vacation-btn" style="margin-top: 4px;">Commit Entry Logs</button>
+        </div>
+
+        <div class="balance-container">
+            <div class="section-title">Yearly Balances <span style="font-size:0.75rem; color:#64748b; font-weight:normal; text-transform:none;">(Click categories to filter dates)</span></div>
+            
+            <div class="balance-row">
+                <div class="balance-info" id="lbl-vacation">
+                    <span class="type-name">Vacation Days</span>
+                    <span class="count-details" id="txt-vacation">0 Used | 20 Available</span>
+                </div>
+                <div class="cell-bar" id="bar-vacation"></div>
+            </div>
+
+            <div class="balance-row">
+                <div class="balance-info" id="lbl-floating">
+                    <span class="type-name">Floating Holidays</span>
+                    <span class="count-details" id="txt-floating">0 Used | 3 Available</span>
+                </div>
+                <div class="cell-bar" id="bar-floating"></div>
+            </div>
+
+            <div class="balance-row">
+                <div class="balance-info" id="lbl-family">
+                    <span class="type-name">Flexible Family Care</span>
+                    <span class="count-details" id="txt-family">0 Used | 10 Available</span>
+                </div>
+                <div class="cell-bar" id="bar-family"></div>
+            </div>
+        </div>
+
+        <div class="history-wrapper" id="history-wrapper">
+            <div class="section-title" id="history-title">Leave Log History</div>
+            <ul class="history-list" id="history-list">
+                </ul>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="sync-modal">
+    <div class="modal-card">
+        <h3>Cloud Sync</h3>
+        <p class="modal-help">
+            Keeps this tracker in sync across your devices by storing a single JSON file in a
+            <strong>private</strong> repository. Create an access token limited to that one repo
+            with <strong>Contents: Read and write</strong> (fine-grained) or the <strong>repo</strong>
+            scope (classic). The token is stored only in this browser's local storage.
+        </p>
+        <label class="modal-help" for="sync-api">API base URL</label>
+        <input type="text" id="sync-api" placeholder="https://api.github.com" autocomplete="off" spellcheck="false">
+        <label class="modal-help" for="sync-owner">Owner (your username or org)</label>
+        <input type="text" id="sync-owner" placeholder="octocat" autocomplete="off" spellcheck="false">
+        <label class="modal-help" for="sync-repo">Private repository name</label>
+        <input type="text" id="sync-repo" placeholder="rto-data" autocomplete="off" spellcheck="false">
+        <label class="modal-help" for="sync-path">File path in repo</label>
+        <input type="text" id="sync-path" placeholder="rto-data.json" autocomplete="off" spellcheck="false">
+        <label class="modal-help" for="sync-branch">Branch</label>
+        <input type="text" id="sync-branch" placeholder="main" autocomplete="off" spellcheck="false">
+        <label class="modal-help" for="sync-token">Access token</label>
+        <input type="password" id="sync-token" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
+        <div class="modal-actions">
+            <button class="sync-btn" id="sync-disconnect-btn">Disconnect</button>
+            <span style="flex:1"></span>
+            <button class="sync-btn" id="sync-close-btn">Cancel</button>
+            <button class="sync-btn" id="sync-save-btn" style="background-color:#3b82f6;color:white;border-color:#3b82f6;">Save &amp; Sync</button>
+        </div>
+        <div class="modal-status" id="sync-modal-status"></div>
+    </div>
+</div>
+
+<script>
+    const STORAGE_KEY = 'rto_calendar_states_binary';
+    
+    let currentNavDate = new Date(); 
+    const today = new Date();
+
+    // Data Hydration Pipeline
+    let rawSavedData = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    let db = { days: {} };
+
+    if (rawSavedData) {
+        if (rawSavedData.days) {
+            db = rawSavedData;
+        } else {
+            for (const [dateString, stateValue] of Object.entries(rawSavedData)) {
+                if (stateValue === 1) db.days[dateString] = 'swiped';
+            }
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        }
+    }
+
+    // Historical Time State Management Engine
+    let undoStack = [];
+    let redoStack = [];
+
+    // ---- Day entry model -------------------------------------------------
+    // Stored value is either a legacy string ('swiped' | 'vacation' | 'floating'
+    // | 'family' | 'holiday') or a half-day object:
+    //   { leave: 'vacation'|'family', half: true, work: 'swiped'|null, slot: 'am'|'pm' }
+    // `slot` is the half of the day the LEAVE occupies ('am' = morning off).
+    const LEAVE_TYPES = ['vacation', 'floating', 'family'];
+    const HALF_ELIGIBLE = ['vacation', 'family'];
+    const ALLOWANCE = { vacation: 20, floating: 3, family: 10 };
+    const WEEKLY_TARGET = 2.89;
+
+    function getEntry(dateStr) {
+        const raw = db.days[dateStr];
+        if (!raw) return null;
+        if (typeof raw === 'string') {
+            if (raw === 'swiped') return { leave: null, half: false, work: 'swiped', slot: 'am' };
+            return { leave: raw, half: false, work: null, slot: 'am' };
+        }
+        return {
+            leave: raw.leave || null,
+            half: !!raw.half,
+            work: raw.work === 'swiped' ? 'swiped' : null,
+            slot: raw.slot === 'pm' ? 'pm' : 'am'
+        };
+    }
+
+    function setEntry(dateStr, entry) {
+        if (!entry || (!entry.leave && entry.work !== 'swiped')) {
+            delete db.days[dateStr];
+            return;
+        }
+        if (entry.half && entry.leave) {
+            db.days[dateStr] = {
+                leave: entry.leave,
+                half: true,
+                work: entry.work === 'swiped' ? 'swiped' : null,
+                slot: entry.slot === 'pm' ? 'pm' : 'am'
+            };
+        } else {
+            db.days[dateStr] = entry.leave ? entry.leave : 'swiped';
+        }
+    }
+
+    // Office attendance credit: any day you badged in counts as one full day,
+    // including half days where the working half was swiped.
+    function swipeCredit(entry) {
+        return (entry && entry.work === 'swiped') ? 1 : 0;
+    }
+
+    // Leave balance consumption: full day = 1, half day = 0.5
+    function leaveCredit(entry, type) {
+        if (!entry || entry.leave !== type) return 0;
+        return entry.half ? 0.5 : 1;
+    }
+
+    function formatDays(value) {
+        return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    }
+
+    function toDateStr(dateObj) {
+        return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+    }
+
+    function saveStateToHistory() {
+        if (undoStack.length >= 50) undoStack.shift();
+        undoStack.push(JSON.stringify(db));
+        redoStack = []; 
+        updateUndoRedoButtons();
+    }
+
+    function executeUndo() {
+        if (undoStack.length === 0) return;
+        redoStack.push(JSON.stringify(db));
+        db = JSON.parse(undoStack.pop());
+        persistDb();
+        updateUndoRedoButtons();
+        renderAll();
+    }
+
+    function executeRedo() {
+        if (redoStack.length === 0) return;
+        undoStack.push(JSON.stringify(db));
+        db = JSON.parse(redoStack.pop());
+        persistDb();
+        updateUndoRedoButtons();
+        renderAll();
+    }
+
+    function updateUndoRedoButtons() {
+        document.getElementById('undo-btn').disabled = (undoStack.length === 0);
+        document.getElementById('redo-btn').disabled = (redoStack.length === 0);
+    }
+
+    let activeLeaveFilter = null; 
+    let contextTargetDateStr = null; // Caches target cell for context updates
+
+    const todayISOStr = today.toISOString().split('T')[0];
+    document.getElementById('start-date').value = todayISOStr;
+    document.getElementById('end-date').value = todayISOStr;
+
+    const grid = document.getElementById('calendar-grid');
+    const title = document.getElementById('calendar-title');
+    const contextMenu = document.getElementById('context-menu');
+
+    // UI Interactive Event Map bindings
+    document.getElementById('prev-month').addEventListener('click', () => { currentNavDate.setMonth(currentNavDate.getMonth() - 1); renderAll(); });
+    document.getElementById('next-month').addEventListener('click', () => { currentNavDate.setMonth(currentNavDate.getMonth() + 1); renderAll(); });
+    document.getElementById('today-btn').addEventListener('click', () => { currentNavDate = new Date(); renderAll(); });
+    document.getElementById('add-vacation-btn').addEventListener('click', logVacationRange);
+    document.getElementById('export-btn').addEventListener('click', exportDataToJSON);
+    document.getElementById('file-input').addEventListener('change', importDataFromJSON);
+    document.getElementById('undo-btn').addEventListener('click', executeUndo);
+    document.getElementById('redo-btn').addEventListener('click', executeRedo);
+
+    document.getElementById('start-date').addEventListener('change', (e) => {
+        document.getElementById('end-date').value = e.target.value;
+    });
+
+    document.getElementById('vacation-type').addEventListener('change', syncFormOptions);
+    document.getElementById('chk-half-day').addEventListener('change', syncFormOptions);
+
+    function syncFormOptions() {
+        const type = document.getElementById('vacation-type').value;
+        const skipWrapper = document.getElementById('skip-weekends-wrapper');
+        const halfWrapper = document.getElementById('half-day-wrapper');
+        const halfChk = document.getElementById('chk-half-day');
+        const halfWorkWrapper = document.getElementById('half-work-wrapper');
+
+        skipWrapper.style.display = (type === 'holiday') ? 'none' : 'flex';
+
+        const halfAllowed = HALF_ELIGIBLE.includes(type);
+        halfWrapper.style.display = halfAllowed ? 'flex' : 'none';
+        if (!halfAllowed) halfChk.checked = false;
+
+        halfWorkWrapper.style.display = (halfAllowed && halfChk.checked) ? 'block' : 'none';
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); executeUndo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); executeRedo(); }
+    });
+
+    ['vacation', 'floating', 'family'].forEach(type => {
+        document.getElementById(`lbl-${type}`).addEventListener('click', () => {
+            activeLeaveFilter = (activeLeaveFilter === type) ? null : type;
+            renderAll();
+        });
+    });
+
+    // Dismiss custom context menu on click elsewhere
+    document.addEventListener('click', () => {
+        contextMenu.style.display = 'none';
+    });
+
+    // Wire up context menu option buttons
+    document.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const action = e.currentTarget.getAttribute('data-action');
+            if (!contextTargetDateStr) return;
+
+            const dateStr = contextTargetDateStr;
+            const existing = getEntry(dateStr);
+
+            if (action === 'clear') {
+                saveStateToHistory();
+                delete db.days[dateStr];
+                saveAndRefresh();
+                return;
+            }
+
+            if (action === 'flip-half') {
+                if (!existing || !existing.half) {
+                    alert("This day is not a half day. Assign a half-day category first.");
+                    return;
+                }
+                saveStateToHistory();
+                setEntry(dateStr, { leave: existing.leave, half: true, work: existing.work, slot: existing.slot === 'pm' ? 'am' : 'pm' });
+                saveAndRefresh();
+                return;
+            }
+
+            if (action === 'toggle-half-work') {
+                if (!existing || !existing.half) {
+                    alert("This day is not a half day. Assign a half-day category first.");
+                    return;
+                }
+                saveStateToHistory();
+                setEntry(dateStr, { leave: existing.leave, half: true, work: existing.work === 'swiped' ? null : 'swiped', slot: existing.slot });
+                saveAndRefresh();
+                return;
+            }
+
+            let target = null;
+            if (action.startsWith('half-')) {
+                const [, leaveType, workMode] = action.split('-');
+                // Keep the day's existing AM/PM arrangement, else fall back to the form's choice
+                const slot = (existing && existing.half)
+                    ? existing.slot
+                    : (document.getElementById('half-slot').value === 'pm' ? 'pm' : 'am');
+                target = { leave: leaveType, half: true, work: workMode === 'swiped' ? 'swiped' : null, slot };
+            } else if (action === 'swiped') {
+                target = { leave: null, half: false, work: 'swiped' };
+            } else if (['vacation', 'floating', 'family', 'holiday'].includes(action)) {
+                target = { leave: action, half: false, work: null };
+            }
+            if (!target) return;
+
+            // Balance guard: only charge for the additional leave this change consumes
+            if (target.leave && LEAVE_TYPES.includes(target.leave)) {
+                const delta = leaveCredit(target, target.leave) - leaveCredit(existing, target.leave);
+                if (delta > 0) {
+                    const used = getBalancesForYear(dateStr.slice(0, 4));
+                    if (used[target.leave] + delta > ALLOWANCE[target.leave]) {
+                        alert(`Balance Guard Error: Cannot log category. You have already exhausted your yearly allowance for ${target.leave.toUpperCase()}.`);
+                        return;
+                    }
+                }
+            }
+
+            saveStateToHistory();
+            setEntry(dateStr, target);
+            saveAndRefresh();
+        });
+    });
+
+    function renderCalendar() {
+        grid.innerHTML = '';
+        const year = currentNavDate.getFullYear();
+        const month = currentNavDate.getMonth();
+
+        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        daysOfWeek.forEach(day => {
+            const el = document.createElement('div');
+            el.className = 'weekday-label';
+            el.textContent = day;
+            grid.appendChild(el);
+        });
+
+        title.textContent = currentNavDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+        const prevTotalDays = new Date(year, month, 0).getDate();
+
+        for (let i = firstDayIndex; i > 0; i--) {
+            const cell = document.createElement('div');
+            cell.className = 'day-cell other-month';
+            cell.textContent = prevTotalDays - i + 1;
+            grid.appendChild(cell);
+        }
+
+        for (let day = 1; day <= totalDays; day++) {
+            const cell = document.createElement('div');
+            cell.className = 'day-cell';
+            cell.textContent = day;
+
+            const targetDate = new Date(year, month, day);
+            const dayOfWeek = targetDate.getDay();
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                cell.classList.add('weekend-cell');
+            }
+            if (year === today.getFullYear() && month === today.getMonth() && day === today.getDate()) {
+                cell.classList.add('today');
+            }
+
+            const state = getEntry(dateStr);
+            if (state) {
+                if (state.half && state.leave) {
+                    const leaveColor = `var(--color-${state.leave})`;
+                    const workColor = state.work === 'swiped' ? 'var(--color-swiped)' : 'var(--color-none)';
+                    // slot 'am' = leave in the morning, so leave sits on top
+                    const topColor = state.slot === 'pm' ? workColor : leaveColor;
+                    const bottomColor = state.slot === 'pm' ? leaveColor : workColor;
+
+                    cell.classList.add('state-half');
+                    if (state.work === 'swiped') cell.classList.add('work-swiped');
+                    cell.style.background = `linear-gradient(to bottom, ${topColor} 50%, ${bottomColor} 50%)`;
+
+                    const leaveName = state.leave === 'vacation' ? 'Vacation' : 'Family Care';
+                    const workName = state.work === 'swiped' ? 'office (swiped)' : 'not swiped';
+                    cell.title = state.slot === 'pm'
+                        ? `AM: ${workName} · PM: ${leaveName} (afternoon off)`
+                        : `AM: ${leaveName} (morning off) · PM: ${workName}`;
+                } else if (state.leave) {
+                    cell.classList.add(`state-${state.leave}`);
+                } else if (state.work === 'swiped') {
+                    cell.classList.add('state-swiped');
+                }
+            }
+
+            // Left-click: half days toggle their work half, otherwise cycle empty -> swiped -> empty
+            cell.addEventListener('click', () => {
+                saveStateToHistory();
+                const current = getEntry(dateStr);
+                if (current && current.half && current.leave) {
+                    setEntry(dateStr, { leave: current.leave, half: true, work: current.work === 'swiped' ? null : 'swiped', slot: current.slot });
+                } else if (!current) {
+                    setEntry(dateStr, { leave: null, half: false, work: 'swiped' });
+                } else {
+                    delete db.days[dateStr];
+                }
+                saveAndRefresh();
+            });
+
+            // Right-click intercepts native behavior to summon the category selector menu
+            cell.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                contextTargetDateStr = dateStr;
+                
+                // Track cursor screen vectors to safely anchor popup overlay coordinates
+                contextMenu.style.left = `${e.clientX}px`;
+                contextMenu.style.top = `${e.clientY}px`;
+                contextMenu.style.display = 'block';
+            });
+
+            grid.appendChild(cell);
+        }
+    }
+
+    function logVacationRange() {
+        const startVal = document.getElementById('start-date').value;
+        const endVal = document.getElementById('end-date').value;
+        const type = document.getElementById('vacation-type').value;
+        const skipWeekends = document.getElementById('chk-skip-weekends').checked;
+        const isHalf = HALF_ELIGIBLE.includes(type) && document.getElementById('chk-half-day').checked;
+        const halfWork = document.getElementById('half-work-mode').value === 'swiped' ? 'swiped' : null;
+        const halfSlot = document.getElementById('half-slot').value === 'pm' ? 'pm' : 'am';
+
+        if (!startVal || !endVal) return;
+
+        const startDate = new Date(startVal + 'T00:00:00');
+        const endDate = new Date(endVal + 'T00:00:00');
+
+        if (endDate < startDate) {
+            alert("Operational Error: End date cannot sit before Start date.");
+            return;
+        }
+
+        const target = { leave: type, half: isHalf, work: isHalf ? halfWork : null, slot: halfSlot };
+        const affected = [];
+
+        let loopDate = new Date(startDate);
+        while (loopDate <= endDate) {
+            const dateStr = toDateStr(loopDate);
+            const dayOfWeek = loopDate.getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            const existing = getEntry(dateStr);
+            const isPaidHoliday = !!(existing && existing.leave === 'holiday');
+
+            if (!(type !== 'holiday' && skipWeekends && (isWeekend || isPaidHoliday))) {
+                affected.push(dateStr);
+            }
+            loopDate.setDate(loopDate.getDate() + 1);
+        }
+
+        if (LEAVE_TYPES.includes(type)) {
+            // Charge only the incremental balance each day consumes, per calendar year
+            const deltasByYear = {};
+            affected.forEach(dateStr => {
+                const delta = leaveCredit(target, type) - leaveCredit(getEntry(dateStr), type);
+                if (delta === 0) return;
+                const yr = dateStr.slice(0, 4);
+                deltasByYear[yr] = (deltasByYear[yr] || 0) + delta;
+            });
+
+            for (const [yr, delta] of Object.entries(deltasByYear)) {
+                if (delta <= 0) continue;
+                const available = ALLOWANCE[type] - getBalancesForYear(yr)[type];
+                if (delta > available) {
+                    alert(`Balance Guard Error: You are trying to log ${formatDays(delta)} day(s) of ${type.toUpperCase()} in ${yr}, but you only have ${formatDays(available)} day(s) remaining.`);
+                    return;
+                }
+            }
+        }
+
+        saveStateToHistory();
+        affected.forEach(dateStr => setEntry(dateStr, target));
+        saveAndRefresh();
+    }
+
+    function getBalancesForYear(yearString) {
+        const used = { vacation: 0, floating: 0, family: 0 };
+        for (const dateKey of Object.keys(db.days)) {
+            if (!dateKey.startsWith(yearString)) continue;
+            const entry = getEntry(dateKey);
+            if (!entry || !entry.leave || used[entry.leave] === undefined) continue;
+            used[entry.leave] += leaveCredit(entry, entry.leave);
+        }
+        return used;
+    }
+
+    function saveAndRefresh() {
+        persistDb();
+        renderAll();
+    }
+
+    // Writes to localStorage and stamps a change time so cloud sync can tell
+    // which side is newer. Pass false to persist without claiming a new edit.
+    function persistDb(markChanged) {
+        if (markChanged !== false) db.updatedAt = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        if (markChanged !== false) scheduleAutoPush();
+    }
+
+    function calculateMetrics() {
+        const anchorDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const currentSunday = new Date(anchorDate);
+        currentSunday.setDate(anchorDate.getDate() - anchorDate.getDay());
+
+        const avg4 = getRollingWindowMetrics(currentSunday, 4);
+        const avg12 = getRollingWindowMetrics(currentSunday, 12);
+
+        // Year-to-date: number of full weeks (Sun-Sat) elapsed since Jan 1 of the current year
+        const startOfYear = new Date(anchorDate.getFullYear(), 0, 1);
+        const startOfYearSunday = new Date(startOfYear);
+        startOfYearSunday.setDate(startOfYear.getDate() - startOfYear.getDay());
+        const weeksYTD = Math.max(1, Math.round((currentSunday - startOfYearSunday) / (7 * 24 * 60 * 60 * 1000)) + 1);
+        const avgYTD = getRollingWindowMetrics(currentSunday, weeksYTD);
+
+        const div4wk = document.getElementById('avg-4wk');
+        const div12wk = document.getElementById('avg-12wk');
+        const divYTD = document.getElementById('avg-ytd');
+
+        div4wk.textContent = avg4.toFixed(2);
+        div12wk.textContent = avg12.toFixed(2);
+        divYTD.textContent = avgYTD.toFixed(2);
+
+        div4wk.className = 'metric-value';
+        if (avg4 >= 4.00) div4wk.classList.add('status-green');
+        else if (avg4 >= 2.89) div4wk.classList.add('status-yellow');
+        else div4wk.classList.add('status-red');
+
+        div12wk.className = 'metric-value';
+        if (avg12 >= 4.00) div12wk.classList.add('status-green');
+        else if (avg12 >= 2.89) div12wk.classList.add('status-yellow');
+        else div12wk.classList.add('status-red');
+
+        divYTD.className = 'metric-value';
+        if (avgYTD >= 4.00) divYTD.classList.add('status-green');
+        else if (avgYTD >= 2.89) divYTD.classList.add('status-yellow');
+        else divYTD.classList.add('status-red');
+
+        renderYearSummary(startOfYearSunday);
+    }
+
+    function renderYearSummary(startOfYearSunday) {
+        const year = today.getFullYear();
+        const yearStr = String(year);
+
+        // Total office days banked this year (a swiped half day counts as one day).
+        // Mon-Fri only, matching the rolling-average windows.
+        let swipedThisYear = 0;
+        for (const dateKey of Object.keys(db.days)) {
+            if (!dateKey.startsWith(yearStr)) continue;
+            const dow = new Date(dateKey + 'T00:00:00').getDay();
+            if (dow === 0 || dow === 6) continue;
+            swipedThisYear += swipeCredit(getEntry(dateKey));
+        }
+
+        // Full-year week count using the same Sunday-anchored windows as the YTD average
+        const endOfYear = new Date(year, 11, 31);
+        const endOfYearSunday = new Date(endOfYear);
+        endOfYearSunday.setDate(endOfYear.getDate() - endOfYear.getDay());
+        const weeksInYear = Math.round((endOfYearSunday - startOfYearSunday) / (7 * 24 * 60 * 60 * 1000)) + 1;
+
+        // Round the year target up so a partial day still shows as a whole day owed
+        const targetTotal = Math.ceil(WEEKLY_TARGET * weeksInYear);
+        const remaining = Math.max(0, Math.ceil(targetTotal - swipedThisYear));
+
+        document.getElementById('ytd-swiped-total').textContent = formatDays(swipedThisYear);
+        document.getElementById('ytd-year-label').textContent = yearStr;
+
+        const neededEl = document.getElementById('ytd-needed-total');
+        neededEl.textContent = String(remaining);
+        neededEl.style.color = remaining === 0 ? '#065f46' : '#334155';
+        document.getElementById('ytd-needed-note').textContent = remaining === 0
+            ? `target met (${targetTotal} of ${weeksInYear} wks)`
+            : `of ${targetTotal} needed across ${weeksInYear} wks`;
+    }
+
+    function getRollingWindowMetrics(startSunday, totalWeeksToCount) {
+        let uniqueSwipesCount = 0;
+
+        for (let w = 0; w < totalWeeksToCount; w++) {
+            const targetSunday = new Date(startSunday);
+            targetSunday.setDate(startSunday.getDate() - (w * 7));
+
+            for (let d = 1; d <= 5; d++) {
+                const searchDate = new Date(targetSunday);
+                searchDate.setDate(targetSunday.getDate() + d);
+
+                uniqueSwipesCount += swipeCredit(getEntry(toDateStr(searchDate)));
+            }
+        }
+        return uniqueSwipesCount / totalWeeksToCount; 
+    }
+
+    function renderLeaveBalancesAndHistory() {
+        const currentYearString = today.getFullYear().toString();
+        const used = getBalancesForYear(currentYearString);
+        
+        const wrapper = document.getElementById('history-wrapper');
+        const historyList = document.getElementById('history-list');
+        const historyTitle = document.getElementById('history-title');
+        
+        historyList.innerHTML = '';
+        const sortedLoggedDates = Object.keys(db.days).sort((a, b) => new Date(b) - new Date(a));
+
+        sortedLoggedDates.forEach(dateKey => {
+            const entry = getEntry(dateKey);
+            if (!entry) return;
+
+            if (activeLeaveFilter !== null && entry.leave === activeLeaveFilter) {
+                const li = document.createElement('li');
+                li.className = 'history-item';
+                
+                const displayDate = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', year: 'numeric'
+                });
+
+                let prettyLabel = entry.leave === 'vacation' ? 'Vacation' : entry.leave === 'floating' ? 'Floating' : 'Family Care';
+                if (entry.half) {
+                    const when = entry.slot === 'pm' ? 'PM' : 'AM';
+                    prettyLabel = `${when} ½ ${prettyLabel} · ${entry.work === 'swiped' ? 'Swiped' : 'No Swipe'}`;
+                }
+                
+                li.innerHTML = `
+                    <span class="hist-date">${displayDate}</span>
+                    <span class="badge bg-${entry.leave}">${prettyLabel}</span>
+                `;
+                
+                li.addEventListener('click', () => {
+                    currentNavDate = new Date(dateKey + 'T00:00:00');
+                    renderAll();
+                });
+
+                historyList.appendChild(li);
+            }
+        });
+
+        if (activeLeaveFilter === null) {
+            wrapper.style.display = 'none';
+        } else {
+            wrapper.style.display = 'flex';
+            let filterName = activeLeaveFilter === 'vacation' ? 'Vacation Days' : activeLeaveFilter === 'floating' ? 'Floating Holidays' : 'Flexible Family Care';
+            historyTitle.textContent = `Logged: ${filterName}`;
+            
+            if (historyList.children.length === 0) {
+                historyList.innerHTML = `<li class="history-item" style="color:#94a3b8; justify-content:center; cursor:default;">No days logged for this category.</li>`;
+            }
+        }
+
+        for (const type of ['vacation', 'floating', 'family']) {
+            const limit = ALLOWANCE[type];
+            const count = used[type];
+            const left = Math.max(0, limit - count);
+
+            document.getElementById(`txt-${type}`).textContent = `${formatDays(count)} Used | ${formatDays(left)} Available`;
+
+            const labelEl = document.getElementById(`lbl-${type}`);
+            if (activeLeaveFilter === type) labelEl.classList.add('active-filter');
+            else labelEl.classList.remove('active-filter');
+
+            const barContainer = document.getElementById(`bar-${type}`);
+            barContainer.innerHTML = '';
+
+            const fullCells = Math.floor(count);
+            const hasHalfCell = (count - fullCells) > 0;
+
+            for (let c = 0; c < limit; c++) {
+                const cell = document.createElement('div');
+                if (c < fullCells) cell.className = `bar-cell filled-${type}`;
+                else if (c === fullCells && hasHalfCell) cell.className = `bar-cell half-${type}`;
+                else cell.className = 'bar-cell empty';
+                barContainer.appendChild(cell);
+            }
+        }
+    }
+
+    function exportDataToJSON() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `rto_tracker_backup_${today.toISOString().split('T')[0]}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    }
+
+    function importDataFromJSON(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const parsed = JSON.parse(e.target.result);
+                if (parsed && (parsed.days || typeof parsed === 'object')) {
+                    saveStateToHistory();
+                    db = parsed.days ? parsed : { days: parsed };
+                    persistDb();
+                    renderAll();
+                    alert("Data records successfully restored from file.");
+                } else {
+                    alert("Error: Invalid JSON data format.");
+                }
+            } catch (err) {
+                alert("Critical Error: Unable to read file structural data.");
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // ===================== Cloud Sync (private GitHub repo) =====================
+    const SYNC_CFG_KEY = 'rto_sync_config';
+    const SYNC_STATE_KEY = 'rto_sync_state';
+
+    let syncCfg = readJson(SYNC_CFG_KEY) || null;
+    let syncState = readJson(SYNC_STATE_KEY) || {};
+    let syncBusy = false;
+    let pushTimer = null;
+    let lastAutoPull = 0;
+
+    function readJson(key) {
+        try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+    }
+
+    function syncConfigured() {
+        return !!(syncCfg && syncCfg.token && syncCfg.owner && syncCfg.repo && syncCfg.path);
+    }
+
+    function saveSyncState() {
+        localStorage.setItem(SYNC_STATE_KEY, JSON.stringify(syncState));
+    }
+
+    function setSyncStatus(text, kind) {
+        const el = document.getElementById('sync-status');
+        el.textContent = text;
+        el.className = 'sync-status' + (kind ? ' state-' + kind : '');
+    }
+
+    function describeAge(iso) {
+        const ts = Date.parse(iso || '');
+        if (!ts) return '';
+        const mins = Math.floor((Date.now() - ts) / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return mins + 'm ago';
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return hrs + 'h ago';
+        return Math.floor(hrs / 24) + 'd ago';
+    }
+
+    function refreshSyncStatus() {
+        if (!syncConfigured()) { setSyncStatus('Local only', null); return; }
+        if (syncBusy) { setSyncStatus('Syncing\u2026', 'busy'); return; }
+        if (!navigator.onLine) { setSyncStatus('Offline \u2013 changes queued', 'warn'); return; }
+        if (syncState.lastError) { setSyncStatus('Sync error', 'err'); return; }
+        if (syncState.pending) { setSyncStatus('Pending upload', 'warn'); return; }
+        setSyncStatus('Synced ' + describeAge(syncState.lastSyncedAt), 'ok');
+    }
+
+    // UTF-8 safe base64 helpers (btoa/atob are byte-oriented)
+    function encodeB64(str) {
+        const bytes = new TextEncoder().encode(str);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+    }
+
+    function decodeB64(b64) {
+        const bin = atob(String(b64).replace(/\s/g, ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+    }
+
+    function contentsUrl() {
+        const safePath = syncCfg.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+        const base = (syncCfg.api || 'https://api.github.com').replace(/\/+$/, '');
+        return `${base}/repos/${encodeURIComponent(syncCfg.owner)}/${encodeURIComponent(syncCfg.repo)}/contents/${safePath}`;
+    }
+
+    async function ghFetch(method, url, body) {
+        const headers = {
+            'Authorization': 'Bearer ' + syncCfg.token,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+        };
+        if (body) headers['Content-Type'] = 'application/json';
+        let res;
+        try {
+            res = await fetch(url, {
+                method,
+                headers,
+                cache: 'no-store',
+                body: body ? JSON.stringify(body) : undefined
+            });
+        } catch (e) {
+            throw new Error('Cannot reach ' + new URL(url).host + '. Check your network or VPN connection.');
+        }
+        return res;
+    }
+
+    async function ghError(res) {
+        let detail = '';
+        try { detail = (await res.json()).message || ''; } catch (e) { /* ignore */ }
+        if (res.status === 401) return new Error('Token rejected (401). It may have expired \u2013 re-enter it in Sync settings.');
+        if (res.status === 403) return new Error('Access denied (403). The token needs Contents: Read and write (fine-grained) or the repo scope (classic).');
+        if (res.status === 404) return new Error('Repo or path not found (404). Check API base URL, owner, repo and branch.');
+        return new Error(`GitHub API ${res.status}${detail ? ': ' + detail : ''}`);
+    }
+
+    // Returns { exists, remote, sha } for the remote data file.
+    async function fetchRemote() {
+        const branch = syncCfg.branch || 'main';
+        const url = `${contentsUrl()}?ref=${encodeURIComponent(branch)}&cachebust=${Date.now()}`;
+        const res = await ghFetch('GET', url);
+        if (res.status === 404) return { exists: false, remote: null, sha: null };
+        if (!res.ok) throw await ghError(res);
+        const payload = await res.json();
+        let remote;
+        try {
+            remote = JSON.parse(decodeB64(payload.content || ''));
+        } catch (e) {
+            throw new Error('Remote file is not valid JSON.');
+        }
+        if (!remote || typeof remote !== 'object') throw new Error('Remote file is not valid JSON.');
+        if (!remote.days) remote = { days: remote };
+        return { exists: true, remote, sha: payload.sha };
+    }
+
+    async function uploadDb(sha) {
+        const branch = syncCfg.branch || 'main';
+        const res = await ghFetch('PUT', contentsUrl(), {
+            message: 'RTO tracker update ' + new Date().toISOString(),
+            content: encodeB64(JSON.stringify(db, null, 2)),
+            branch,
+            sha: sha || undefined
+        });
+        if (res.status === 409 || res.status === 422) return null; // stale sha
+        if (!res.ok) throw await ghError(res);
+        const payload = await res.json();
+        return (payload.content && payload.content.sha) || null;
+    }
+
+    // Union of both day maps; on a key present in both with different values,
+    // the side with the newer updatedAt wins.
+    function mergeDays(localDb, remoteDb) {
+        const localTime = Date.parse(localDb.updatedAt || '') || 0;
+        const remoteTime = Date.parse(remoteDb.updatedAt || '') || 0;
+        const winner = remoteTime > localTime ? remoteDb : localDb;
+        const loser = winner === remoteDb ? localDb : remoteDb;
+        return { days: Object.assign({}, loser.days || {}, winner.days || {}) };
+    }
+
+    async function runSync(opts) {
+        opts = opts || {};
+        if (!syncConfigured() || syncBusy) return;
+        syncBusy = true;
+        refreshSyncStatus();
+        try {
+            const { exists, remote, sha } = await fetchRemote();
+            syncState.sha = sha;
+
+            if (!exists) {
+                syncState.sha = await uploadDb(null);
+                finishSync('Created remote file.');
+                return;
+            }
+
+            const localStamp = db.updatedAt || null;
+            const remoteStamp = remote.updatedAt || null;
+            // Compare stamps by identity rather than ordering: clocks on two
+            // devices can disagree, but a stamp we have already reconciled is
+            // unambiguous.
+            const localChanged = localStamp !== (syncState.localStamp || null) || !!syncState.pending;
+            const remoteChanged = remoteStamp !== (syncState.remoteStamp || null);
+
+            if (!localChanged && !remoteChanged) {
+                finishSync('Already up to date.', remoteStamp);
+                return;
+            }
+
+            if (remoteChanged && !localChanged) {
+                saveStateToHistory();
+                db = { days: remote.days || {}, updatedAt: remote.updatedAt };
+                persistDb(false);
+                renderAll();
+                finishSync('Pulled newer data from cloud.');
+                return;
+            }
+
+            if (localChanged && remoteChanged) {
+                saveStateToHistory();
+                const merged = mergeDays(db, remote);
+                db = { days: merged.days, updatedAt: new Date().toISOString() };
+                persistDb(false);
+                renderAll();
+            }
+
+            let newSha = await uploadDb(syncState.sha);
+            if (newSha === null) {
+                // Someone else wrote in between: re-read, merge, retry once.
+                const again = await fetchRemote();
+                saveStateToHistory();
+                const merged = mergeDays(db, again.remote || { days: {} });
+                db = { days: merged.days, updatedAt: new Date().toISOString() };
+                persistDb(false);
+                renderAll();
+                newSha = await uploadDb(again.sha);
+                if (newSha === null) throw new Error('Could not upload \u2013 remote kept changing. Try again.');
+            }
+            syncState.sha = newSha;
+            finishSync(localChanged && remoteChanged ? 'Merged local and cloud changes.' : 'Uploaded local changes.');
+        } catch (err) {
+            syncState.lastError = err.message;
+            syncState.pending = true;
+            saveSyncState();
+            refreshSyncStatus();
+            setModalStatus(err.message, 'err');
+            if (opts.interactive) alert('Sync failed: ' + err.message);
+        } finally {
+            syncBusy = false;
+            refreshSyncStatus();
+        }
+    }
+
+    function finishSync(message, remoteStamp) {
+        syncState.lastSyncedAt = new Date().toISOString();
+        syncState.localStamp = db.updatedAt || null;
+        // When omitted, the remote now holds exactly what we just uploaded.
+        syncState.remoteStamp = (remoteStamp === undefined) ? (db.updatedAt || null) : remoteStamp;
+        syncState.pending = false;
+        syncState.lastError = null;
+        saveSyncState();
+        setModalStatus(message, 'ok');
+    }
+
+    function scheduleAutoPush() {
+        if (!syncConfigured()) return;
+        syncState.pending = true;
+        saveSyncState();
+        refreshSyncStatus();
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(() => runSync(), 2500);
+    }
+
+    function maybeAutoPull(force) {
+        if (!syncConfigured() || !navigator.onLine) return;
+        if (!force && Date.now() - lastAutoPull < 30000) return;
+        lastAutoPull = Date.now();
+        runSync();
+    }
+
+    function setModalStatus(text, kind) {
+        const el = document.getElementById('sync-modal-status');
+        if (!el) return;
+        el.textContent = text || '';
+        el.className = 'modal-status' + (kind ? ' ' + kind : '');
+    }
+
+    function openSyncModal() {
+        document.getElementById('sync-api').value = (syncCfg && syncCfg.api) || 'https://api.github.com';
+        document.getElementById('sync-owner').value = (syncCfg && syncCfg.owner) || '';
+        document.getElementById('sync-repo').value = (syncCfg && syncCfg.repo) || '';
+        document.getElementById('sync-path').value = (syncCfg && syncCfg.path) || 'rto-data.json';
+        document.getElementById('sync-branch').value = (syncCfg && syncCfg.branch) || 'main';
+        document.getElementById('sync-token').value = (syncCfg && syncCfg.token) || '';
+        setModalStatus(syncState.lastError || '', syncState.lastError ? 'err' : null);
+        document.getElementById('sync-modal').classList.add('open');
+    }
+
+    function closeSyncModal() {
+        document.getElementById('sync-modal').classList.remove('open');
+    }
+
+    document.getElementById('sync-settings-btn').addEventListener('click', openSyncModal);
+    document.getElementById('sync-close-btn').addEventListener('click', closeSyncModal);
+    document.getElementById('sync-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'sync-modal') closeSyncModal();
+    });
+
+    document.getElementById('sync-disconnect-btn').addEventListener('click', () => {
+        if (!confirm('Remove the stored token and stop syncing on this device? Your local data stays.')) return;
+        localStorage.removeItem(SYNC_CFG_KEY);
+        localStorage.removeItem(SYNC_STATE_KEY);
+        syncCfg = null;
+        syncState = {};
+        closeSyncModal();
+        refreshSyncStatus();
+    });
+
+    document.getElementById('sync-save-btn').addEventListener('click', async () => {
+        const next = {
+            api: (document.getElementById('sync-api').value.trim() || 'https://api.github.com').replace(/\/+$/, ''),
+            owner: document.getElementById('sync-owner').value.trim(),
+            repo: document.getElementById('sync-repo').value.trim(),
+            path: document.getElementById('sync-path').value.trim() || 'rto-data.json',
+            branch: document.getElementById('sync-branch').value.trim() || 'main',
+            token: document.getElementById('sync-token').value.trim()
+        };
+        if (!next.owner || !next.repo || !next.token) {
+            setModalStatus('Owner, repository and token are all required.', 'err');
+            return;
+        }
+        if (!/^https?:\/\//i.test(next.api)) {
+            setModalStatus('API base URL must start with http:// or https://', 'err');
+            return;
+        }
+        const changedTarget = !syncCfg || syncCfg.api !== next.api || syncCfg.owner !== next.owner ||
+                              syncCfg.repo !== next.repo || syncCfg.path !== next.path ||
+                              syncCfg.branch !== next.branch;
+        syncCfg = next;
+        localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(syncCfg));
+        if (changedTarget) { syncState = {}; saveSyncState(); }
+        setModalStatus('Connecting\u2026', null);
+        await runSync({ interactive: false });
+        if (!syncState.lastError) setTimeout(closeSyncModal, 900);
+    });
+
+    window.addEventListener('online', () => { refreshSyncStatus(); maybeAutoPull(true); });
+    window.addEventListener('offline', refreshSyncStatus);
+    window.addEventListener('focus', () => maybeAutoPull(false));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeAutoPull(false); });
+
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').catch(() => { /* offline support is optional */ });
+        });
+    }
+
+    function renderAll() {
+        renderCalendar();
+        calculateMetrics();
+        renderLeaveBalancesAndHistory();
+    }
+
+    renderAll();
+    syncFormOptions();
+    refreshSyncStatus();
+    maybeAutoPull(true);
+    setInterval(refreshSyncStatus, 60000);
+</script>
+
+</body>
+</html>
