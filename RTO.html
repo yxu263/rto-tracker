@@ -125,6 +125,9 @@
             font-size: 0.9rem;
             cursor: pointer;
             user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
             background-color: var(--color-none);
             border: 1px solid #e2e8f0;
             color: #334155;
@@ -883,6 +886,15 @@
         });
     });
 
+    function showDayContextMenu(dateStr, clientX, clientY) {
+        contextTargetDateStr = dateStr;
+        contextMenu.style.display = 'block';
+        const menuWidth = contextMenu.offsetWidth;
+        const menuHeight = contextMenu.offsetHeight;
+        contextMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - menuWidth - 8))}px`;
+        contextMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - menuHeight - 8))}px`;
+    }
+
     function renderCalendar() {
         grid.innerHTML = '';
         const year = currentNavDate.getFullYear();
@@ -952,6 +964,10 @@
 
             // Left-click: half days toggle their work half, otherwise cycle empty -> swiped -> empty
             cell.addEventListener('click', () => {
+                if (cell.dataset.suppressClick === 'true') {
+                    cell.dataset.suppressClick = 'false';
+                    return;
+                }
                 saveStateToHistory();
                 const current = getEntry(dateStr);
                 if (current && current.half && current.leave) {
@@ -967,13 +983,46 @@
             // Right-click intercepts native behavior to summon the category selector menu
             cell.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                contextTargetDateStr = dateStr;
-                
-                // Track cursor screen vectors to safely anchor popup overlay coordinates
-                contextMenu.style.left = `${e.clientX}px`;
-                contextMenu.style.top = `${e.clientY}px`;
-                contextMenu.style.display = 'block';
+                showDayContextMenu(dateStr, e.clientX, e.clientY);
             });
+
+            // Long-press is the touch equivalent of right-click. Cancel it if
+            // the finger moves, and suppress the synthetic click after opening.
+            let touchTimer = null;
+            let touchStartX = 0;
+            let touchStartY = 0;
+            let longPressOpened = false;
+            cell.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                const touch = e.touches[0];
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                longPressOpened = false;
+                touchTimer = setTimeout(() => {
+                    longPressOpened = true;
+                    cell.dataset.suppressClick = 'true';
+                    showDayContextMenu(dateStr, touchStartX, touchStartY);
+                    setTimeout(() => { cell.dataset.suppressClick = 'false'; }, 1000);
+                }, 550);
+            }, { passive: true });
+            cell.addEventListener('touchmove', (e) => {
+                if (!touchTimer || e.touches.length !== 1) return;
+                const touch = e.touches[0];
+                if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+            }, { passive: true });
+            const endTouch = () => {
+                if (touchTimer) clearTimeout(touchTimer);
+                touchTimer = null;
+                if (longPressOpened) {
+                    cell.dataset.suppressClick = 'true';
+                    setTimeout(() => { cell.dataset.suppressClick = 'false'; }, 1000);
+                }
+            };
+            cell.addEventListener('touchend', endTouch, { passive: true });
+            cell.addEventListener('touchcancel', endTouch, { passive: true });
 
             grid.appendChild(cell);
         }
